@@ -19,5 +19,4 @@ seaborn>=0.13.2
 sqlalchemy>=2.0.43
 streamlit>=1.49.1
 trafilatura>=2.0.0
-opencv-python
 xlrd>=2.0.2
