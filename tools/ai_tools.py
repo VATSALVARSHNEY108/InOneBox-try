@@ -8,9 +8,7 @@ from utils.common import create_tool_header, show_progress_bar, add_to_recent
 from utils.file_handler import FileHandler
 from utils.ai_client import ai_client
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+
 # Lazy imports for data analysis libraries to prevent startup failures
 try:
     import pandas as pd
@@ -337,86 +335,745 @@ def content_creator():
 
 
 def ai_art_creator():
-    """AI-powered image generation"""
-    create_tool_header("AI Art Creator", "Generate images using AI", "🎨")
+    """AI-powered image generation using Gemini"""
+    create_tool_header("AI Art Creator", "Generate images with AI using your Gemini API", "🎨")
 
-    # Image generation parameters
-    st.subheader("Image Generation Settings")
+    # Check if API is available
+    provider_info = ai_client.get_provider_info()
+    available_providers = provider_info["available_providers"]
 
+    if not available_providers:
+        st.warning("⚠️ No AI image providers configured. Please set up your API keys.")
+        ai_client._show_api_key_setup_instructions()
+        return
+
+    # Simple image generation interface
+    st.subheader("Image Generation")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        prompt = st.text_area(
+            "Describe what you want to create",
+            placeholder="A beautiful sunset over a mountain landscape, digital art style...",
+            height=100,
+            help="Describe the image you want to generate"
+        )
+    
+    with col2:
+        style = st.selectbox("Art Style", [
+            "Photorealistic", "Digital Art", "Oil Painting", "Watercolor", 
+            "Cartoon", "Anime", "Abstract", "3D Render", "Sketch"
+        ])
+        
+        size = st.selectbox("Image Size", [
+            "1024x1024 (Square)", "1024x768 (Landscape)", "768x1024 (Portrait)"
+        ])
+
+    # Convert size back to format expected by API
+    size_map = {
+        "1024x1024 (Square)": "1024x1024",
+        "1024x768 (Landscape)": "1024x768", 
+        "768x1024 (Portrait)": "768x1024"
+    }
+    actual_size = size_map[size]
+
+    # Generate button and result
+    if st.button("🎨 Generate Image", type="primary") and prompt:
+        with st.spinner("Generating image with AI..."):
+            # Create enhanced prompt with style
+            enhanced_prompt = f"{prompt}, {style.lower()} style"
+            
+            try:
+                # Generate image using Gemini
+                image_bytes = ai_client.generate_image(
+                    prompt=enhanced_prompt,
+                    provider="gemini",
+                    size=actual_size
+                )
+                
+                if image_bytes:
+                    st.subheader("Generated Image")
+                    st.image(image_bytes, caption=f"Generated: {enhanced_prompt}")
+                    
+                    # Download button
+                    FileHandler.create_download_link(
+                        image_bytes,
+                        f"ai_generated_image.png",
+                        "image/png"
+                    )
+                    
+                    # Regenerate options
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🔄 Generate Another"):
+                            st.rerun()
+                    with col2:
+                        if st.button("✨ Refine Prompt"):
+                            st.info("Try adjusting your description for different results!")
+                else:
+                    st.error("Failed to generate image. Please try again with a different prompt.")
+                    
+            except Exception as e:
+                st.error(f"Error generating image: {str(e)}")
+                st.info("Make sure your Gemini API key is configured correctly.")
+
+
+def sentiment_analysis():
+    """Analyze sentiment of text"""
+    create_tool_header("Sentiment Analysis", "Analyze text sentiment using AI", "😊")
+    
+    # Input text
+    text = st.text_area("Enter text to analyze:", 
+                       placeholder="Enter any text to analyze its sentiment...", 
+                       height=150)
+    
+    # Analysis options
     col1, col2 = st.columns(2)
     with col1:
-        prompt = st.text_area("Image Description",
-                              placeholder="Describe the image you want to create...",
-                              height=100)
-        style = st.selectbox("Art Style", [
-            "Realistic", "Digital Art", "Oil Painting", "Watercolor", "Sketch",
-            "Anime/Manga", "Comic Book", "Abstract", "Surreal", "Minimalist"
-        ])
-        mood = st.selectbox("Mood/Atmosphere", [
-            "Neutral", "Happy", "Dramatic", "Peaceful", "Mysterious", "Energetic", "Melancholic"
-        ])
-
+        model = st.selectbox("AI Model", ["gemini", "openai", "anthropic"])
     with col2:
-        resolution = st.selectbox("Resolution", ["1024x1024", "1024x768", "768x1024", "512x512"])
-        color_scheme = st.selectbox("Color Scheme", [
-            "Natural", "Vibrant", "Monochrome", "Warm Tones", "Cool Tones", "Pastel", "High Contrast"
+        analysis_type = st.selectbox("Analysis Type", ["Basic", "Detailed"])
+    
+    # Analyze button
+    if st.button("Analyze Sentiment", type="primary") and text:
+        with st.spinner("Analyzing sentiment..."):
+            try:
+                result = ai_client.analyze_sentiment(text, model=model)
+                
+                if "error" not in result:
+                    st.subheader("Sentiment Analysis Results")
+                    
+                    # Display results
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Overall Sentiment", result.get("sentiment", "Unknown"))
+                    with col2:
+                        confidence = result.get("confidence", 0)
+                        st.metric("Confidence", f"{confidence:.2%}" if isinstance(confidence, (int, float)) else confidence)
+                    with col3:
+                        score = result.get("score", "N/A")
+                        st.metric("Score", f"{score:.2f}" if isinstance(score, (int, float)) else score)
+                    
+                    # Detailed results
+                    if analysis_type == "Detailed" and "explanation" in result:
+                        st.subheader("Detailed Analysis")
+                        st.write(result["explanation"])
+                        
+                else:
+                    st.error(f"Analysis failed: {result.get('error', 'Unknown error')}")
+                    
+            except Exception as e:
+                st.error(f"Error analyzing sentiment: {str(e)}")
+
+
+def image_recognition():
+    """AI-powered image recognition and analysis"""
+    create_tool_header("Image Recognition", "Analyze and recognize objects in images", "👁️")
+            "Abstract", "Impressionist", "Expressionist", "Surreal", "Cubist", "Art Nouveau",
+            "Art Deco", "Baroque", "Renaissance", "Minimalist", "Pop Art", "Street Art"
         ])
-        quality = st.selectbox("Quality", ["Standard", "High", "Ultra"])
+        
+        medium = st.selectbox("Artistic Medium", [
+            "None", "Canvas", "Paper", "Wood Panel", "Metal", "Glass", "Stone", "Fabric",
+            "Digital Canvas", "Fresco", "Mural", "Stained Glass", "Mosaic", "Collage"
+        ])
+    
+    with style_col2:
+        art_movement = st.selectbox("Art Movement/Era", [
+            "Contemporary", "Modern", "Classical", "Romantic", "Gothic", "Art Deco", "Bauhaus",
+            "Dadaism", "Fauvism", "Post-Impressionism", "Neo-Classical", "Victorian",
+            "Medieval", "Renaissance", "Baroque", "Rococo", "Neoclassicism"
+        ])
+        
+        artist_inspiration = st.selectbox("Artist Inspiration", [
+            "None", "Leonardo da Vinci", "Van Gogh", "Picasso", "Monet", "Dali", "Warhol",
+            "Banksy", "Basquiat", "Frida Kahlo", "Georgia O'Keeffe", "Ansel Adams",
+            "Studio Ghibli", "Pixar", "Marvel Comics", "DC Comics", "Akira Toriyama",
+            "Kentaro Miura", "Frank Frazetta", "Boris Vallejo", "H.R. Giger", "Zdzisław Beksiński"
+        ])
+    
+    with style_col3:
+        texture = st.selectbox("Surface Texture", [
+            "Smooth", "Rough", "Glossy", "Matte", "Metallic", "Fabric", "Wood Grain",
+            "Stone", "Glass", "Plastic", "Leather", "Fur", "Feathers", "Scales"
+        ])
+        
+        finish = st.selectbox("Finish Quality", [
+            "Standard", "Polished", "Distressed", "Weathered", "Aged", "Pristine",
+            "Handcrafted", "Industrial", "Organic", "Geometric"
+        ])
 
-    # Advanced options
-    with st.expander("Advanced Options"):
-        negative_prompt = st.text_area("Negative Prompt (what to avoid)",
-                                       placeholder="low quality, blurry, distorted...")
-        seed = st.number_input("Seed (for reproducibility)", min_value=0, value=0)
-        num_images = st.slider("Number of Images", 1, 4, 1)
+    # Composition & Camera Controls
+    st.subheader("📸 Composition & Camera")
+    
+    comp_col1, comp_col2, comp_col3 = st.columns(3)
+    
+    with comp_col1:
+        shot_type = st.selectbox("Shot Type", [
+            "Medium Shot", "Close-up", "Extreme Close-up", "Wide Shot", "Long Shot",
+            "Establishing Shot", "Over-the-shoulder", "Bird's Eye View", "Worm's Eye View",
+            "Dutch Angle", "Point of View", "Macro", "Panoramic"
+        ])
+        
+        camera_angle = st.selectbox("Camera Angle", [
+            "Eye Level", "High Angle", "Low Angle", "Overhead", "Upward", "Side View",
+            "Three-Quarter View", "Profile", "Frontal", "Rear View", "Diagonal"
+        ])
+    
+    with comp_col2:
+        depth_of_field = st.selectbox("Depth of Field", [
+            "Sharp Focus", "Shallow DOF", "Deep DOF", "Bokeh Background", "Tilt-Shift",
+            "Focus Stacking", "Split Focus", "Rack Focus"
+        ])
+        
+        lens_type = st.selectbox("Lens Effect", [
+            "Standard", "Wide Angle", "Telephoto", "Fisheye", "Macro", "Anamorphic",
+            "Prime Lens", "Zoom Lens", "Tilt-Shift Lens"
+        ])
+    
+    with comp_col3:
+        framing = st.selectbox("Framing", [
+            "Centered", "Rule of Thirds", "Golden Ratio", "Symmetrical", "Asymmetrical",
+            "Leading Lines", "Frame within Frame", "Negative Space", "Tight Crop"
+        ])
+        
+        perspective = st.selectbox("Perspective", [
+            "Linear", "One Point", "Two Point", "Three Point", "Isometric", "Aerial",
+            "Forced Perspective", "Atmospheric", "Foreshortening"
+        ])
 
-    if st.button("Generate Image") and prompt:
-        with st.spinner("Creating AI artwork..."):
-            # Enhanced prompt
-            enhanced_prompt = enhance_image_prompt(prompt, style, mood, color_scheme)
+    # Lighting & Atmosphere
+    st.subheader("💡 Lighting & Atmosphere")
+    
+    light_col1, light_col2, light_col3 = st.columns(3)
+    
+    with light_col1:
+        lighting_setup = st.selectbox("Lighting Setup", [
+            "Natural Light", "Studio Lighting", "Dramatic Lighting", "Soft Lighting",
+            "Hard Lighting", "Rim Lighting", "Backlighting", "Side Lighting",
+            "Top Lighting", "Key Light", "Fill Light", "Ambient Light", "Volumetric Lighting"
+        ])
+        
+        time_of_day = st.selectbox("Time of Day", [
+            "Midday", "Golden Hour", "Blue Hour", "Sunrise", "Sunset", "Dawn", "Dusk",
+            "Noon", "Afternoon", "Evening", "Night", "Midnight", "Pre-dawn"
+        ])
+    
+    with light_col2:
+        weather = st.selectbox("Weather/Atmosphere", [
+            "Clear", "Cloudy", "Overcast", "Stormy", "Rainy", "Snowy", "Foggy", "Misty",
+            "Hazy", "Sunny", "Windy", "Humid", "Dry", "Thunderstorm", "Blizzard"
+        ])
+        
+        mood_atmosphere = st.selectbox("Mood/Atmosphere", [
+            "Serene", "Dramatic", "Mysterious", "Joyful", "Melancholic", "Energetic",
+            "Peaceful", "Intense", "Romantic", "Eerie", "Majestic", "Intimate",
+            "Epic", "Nostalgic", "Futuristic", "Ancient", "Ethereal", "Gritty"
+        ])
+    
+    with light_col3:
+        color_temperature = st.selectbox("Color Temperature", [
+            "Neutral", "Warm", "Cool", "Very Warm", "Very Cool", "Tungsten", "Daylight",
+            "Fluorescent", "Candlelight", "Moonlight", "Neon", "LED"
+        ])
+        
+        contrast_level = st.selectbox("Contrast", [
+            "Normal", "High Contrast", "Low Contrast", "Dramatic Shadows", "Soft Shadows",
+            "No Shadows", "Harsh Lighting", "Even Lighting", "Chiaroscuro"
+        ])
 
-            st.info(f"Enhanced prompt: {enhanced_prompt}")
+    # Color & Palette
+    st.subheader("🌈 Color & Palette")
+    
+    color_col1, color_col2 = st.columns(2)
+    
+    with color_col1:
+        color_palette = st.selectbox("Color Palette", [
+            "Natural", "Vibrant", "Muted", "Monochromatic", "Complementary", "Analogous",
+            "Triadic", "Split-Complementary", "Tetradic", "Warm Tones", "Cool Tones",
+            "Earth Tones", "Pastel", "Neon", "Jewel Tones", "Metallic", "Sepia",
+            "Black and White", "High Saturation", "Desaturated", "Gradient"
+        ])
+        
+        dominant_color = st.selectbox("Dominant Color", [
+            "Auto", "Red", "Blue", "Green", "Yellow", "Orange", "Purple", "Pink",
+            "Brown", "Black", "White", "Gray", "Gold", "Silver", "Copper", "Bronze"
+        ])
+    
+    with color_col2:
+        color_harmony = st.selectbox("Color Harmony", [
+            "Natural", "Complementary", "Analogous", "Triadic", "Split-Complementary",
+            "Tetradic", "Monochromatic", "Achromatic", "Custom Gradient"
+        ])
+        
+        saturation = st.selectbox("Saturation Level", [
+            "Natural", "High Saturation", "Low Saturation", "Desaturated", "Oversaturated",
+            "Selective Color", "Vintage", "Faded", "Vivid", "Muted Pastels"
+        ])
 
-            # Generate image
-            image_data = ai_client.generate_image(enhanced_prompt)
+    # Technical Settings
+    st.subheader("⚙️ Technical Settings")
+    
+    tech_col1, tech_col2, tech_col3 = st.columns(3)
+    
+    with tech_col1:
+        resolution = st.selectbox("Resolution", [
+            "1024x1024", "1024x768", "768x1024", "1152x896", "896x1152", 
+            "1216x832", "832x1216", "1344x768", "768x1344", "1536x640", "640x1536"
+        ])
+        
+        aspect_ratio = st.selectbox("Aspect Ratio", [
+            "Square (1:1)", "Landscape (4:3)", "Portrait (3:4)", "Widescreen (16:9)",
+            "Ultra-wide (21:9)", "Cinema (2.35:1)", "Golden Ratio", "Custom"
+        ])
+    
+    with tech_col2:
+        quality = st.selectbox("Quality Level", [
+            "Standard", "High Quality", "Ultra High Quality", "Masterpiece", "8K", "4K",
+            "Professional", "Gallery Quality", "Print Ready", "Web Optimized"
+        ])
+        
+        detail_level = st.selectbox("Detail Level", [
+            "Normal", "Highly Detailed", "Extremely Detailed", "Intricate", "Fine Details",
+            "Sharp Details", "Soft Details", "Minimalist", "Clean", "Complex"
+        ])
+    
+    with tech_col3:
+        render_engine = st.selectbox("Render Style", [
+            "Default", "Unreal Engine", "Octane Render", "Blender", "Maya", "3ds Max",
+            "Cinema 4D", "V-Ray", "Arnold", "Cycles", "PBRT", "Photorealistic"
+        ])
+        
+        post_processing = st.selectbox("Post-Processing", [
+            "None", "Color Grading", "Film Grain", "Vintage", "HDR", "Bloom Effect",
+            "Lens Flare", "Vignette", "Chromatic Aberration", "Film Look"
+        ])
 
-            if image_data:
-                st.subheader("Generated Artwork")
+    # Advanced Options
+    with st.expander("🔧 Advanced Controls", expanded=False):
+        
+        adv_col1, adv_col2 = st.columns(2)
+        
+        with adv_col1:
+            negative_prompt = st.text_area(
+                "Negative Prompt (what to avoid)",
+                placeholder="blurry, low quality, distorted, bad anatomy, deformed, ugly, duplicate, watermark, signature, text, logo, cropped...",
+                height=100,
+                help="Specify what should NOT appear in the image"
+            )
+            
+            custom_modifiers = st.text_area(
+                "Custom Modifiers",
+                placeholder="trending on artstation, award-winning, museum quality, professional photography...",
+                height=80,
+                help="Add custom quality and style modifiers"
+            )
+        
+        with adv_col2:
+            seed = st.number_input(
+                "Seed (for reproducibility)", 
+                min_value=0, 
+                max_value=2147483647, 
+                value=0,
+                help="Use the same seed to reproduce similar results"
+            )
+            
+            guidance_scale = st.slider(
+                "Guidance Scale", 
+                1.0, 30.0, 7.5, 0.5,
+                help="How closely the AI follows your prompt (7-15 recommended)"
+            )
+            
+            steps = st.slider(
+                "Inference Steps", 
+                10, 100, 50, 5,
+                help="More steps = higher quality but slower generation"
+            )
+            
+            creativity = st.slider(
+                "Creativity Level", 
+                0.1, 2.0, 1.0, 0.1,
+                help="Higher values = more creative interpretation"
+            )
 
-                # Display image
-                st.image(io.BytesIO(image_data), caption="AI Generated Image")
+    # Prompt Enhancement Options
+    with st.expander("✨ Prompt Enhancement", expanded=True):
+        enhance_col1, enhance_col2 = st.columns(2)
+        
+        with enhance_col1:
+            auto_enhance = st.checkbox("Auto-enhance prompt", value=True, help="Automatically improve your prompt")
+            add_quality_tags = st.checkbox("Add quality modifiers", value=True, help="Add professional quality tags")
+            add_style_consistency = st.checkbox("Ensure style consistency", value=True, help="Make all elements match the chosen style")
+        
+        with enhance_col2:
+            boost_details = st.checkbox("Boost detail descriptions", value=False, help="Add more detailed descriptions")
+            add_photography_terms = st.checkbox("Add photography terms", value=False, help="Include camera and lens terminology")
+            artistic_flair = st.checkbox("Add artistic flair", value=False, help="Include artistic and creative modifiers")
 
-                # Image details
-                st.subheader("Generation Details")
-                generation_info = {
-                    "Original Prompt": prompt,
-                    "Enhanced Prompt": enhanced_prompt,
-                    "Style": style,
-                    "Mood": mood,
-                    "Color Scheme": color_scheme,
-                    "Resolution": resolution,
-                    "Generated At": datetime.now().isoformat()
-                }
+    # Generation Controls
+    st.subheader("🚀 Generate")
+    
+    gen_col1, gen_col2, gen_col3 = st.columns(3)
+    
+    with gen_col1:
+        num_images = st.selectbox("Number of Images", [1, 2, 3, 4], help="Generate multiple variations")
+    
+    with gen_col2:
+        batch_mode = st.checkbox("Batch Mode", help="Generate all images in sequence")
+    
+    with gen_col3:
+        save_settings = st.checkbox("Save Settings", help="Save current settings as preset")
 
-                for key, value in generation_info.items():
-                    st.write(f"**{key}**: {value}")
+    # Enhanced prompt preview
+    if prompt:
+        enhanced_prompt = create_enhanced_prompt(
+            prompt, art_style, medium, art_movement, artist_inspiration, texture, finish,
+            shot_type, camera_angle, depth_of_field, lens_type, framing, perspective,
+            lighting_setup, time_of_day, weather, mood_atmosphere, color_temperature, contrast_level,
+            color_palette, dominant_color, color_harmony, saturation,
+            quality, detail_level, render_engine, post_processing,
+            custom_modifiers, auto_enhance, add_quality_tags, add_style_consistency,
+            boost_details, add_photography_terms, artistic_flair
+        )
+        
+        with st.expander("📝 Preview Enhanced Prompt", expanded=False):
+            st.code(enhanced_prompt, language=None)
+            
+            # Prompt analysis
+            word_count = len(enhanced_prompt.split())
+            complexity_score = calculate_prompt_complexity(enhanced_prompt)
+            
+            analysis_col1, analysis_col2, analysis_col3 = st.columns(3)
+            with analysis_col1:
+                st.metric("Word Count", word_count)
+            with analysis_col2:
+                st.metric("Complexity", f"{complexity_score}/10")
+            with analysis_col3:
+                effectiveness = "High" if complexity_score >= 7 else "Medium" if complexity_score >= 4 else "Low"
+                st.metric("Effectiveness", effectiveness)
 
-                # Download options
-                FileHandler.create_download_link(
-                    image_data,
-                    f"ai_artwork_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
-                    "image/png"
+    # Provider Selection Section
+    st.subheader("🔌 AI Provider")
+    
+    provider_info = ai_client.get_provider_info()
+    available_providers = provider_info["available_providers"]
+    
+    if not available_providers:
+        st.error("⚠️ No AI providers configured. Please set up API keys to continue.")
+        ai_client._show_api_key_setup_instructions()
+        
+        # Show setup instructions and links
+        st.markdown("""
+        **Quick Setup:**
+        
+        Choose one of the providers below and configure your API key through the integration system:
+        """)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            with st.container():
+                st.markdown("**🎨 OpenAI DALL-E 3 (Recommended)**")
+                st.markdown("• High-quality image generation")
+                st.markdown("• Professional artistic results")
+                st.markdown("• Multiple resolution options")
+                st.link_button("Get OpenAI API Key", "https://platform.openai.com/api-keys", use_container_width=True)
+        
+        with col2:
+            with st.container():
+                st.markdown("**⚡ Google Gemini 2.0**")
+                st.markdown("• Fast experimental generation")
+                st.markdown("• Lower cost alternative")
+                st.markdown("• Integrated with Google AI")
+                st.link_button("Get Gemini API Key", "https://aistudio.google.com/app/apikey", use_container_width=True)
+        
+        return  # Stop here if no providers available
+    
+    # Provider selection and status
+    provider_col1, provider_col2 = st.columns([2, 1])
+    
+    with provider_col1:
+        provider_options = ["auto"] + available_providers
+        provider_labels = {
+            "auto": "🤖 Auto-Select (Recommended)",
+            "openai": "🎨 OpenAI DALL-E 3",
+            "gemini": "⚡ Google Gemini 2.0"
+        }
+        
+        selected_provider = st.selectbox(
+            "AI Provider",
+            provider_options,
+            format_func=lambda x: provider_labels.get(x, x),
+            help="Choose your preferred AI provider or let the system auto-select"
+        )
+    
+    with provider_col2:
+        # Show provider status
+        if selected_provider == "auto":
+            primary_provider = available_providers[0]
+            status_emoji = "✅" if primary_provider in available_providers else "❌"
+            st.info(f"{status_emoji} Auto: {primary_provider.title()}")
+        else:
+            status_emoji = "✅" if selected_provider in available_providers else "❌"
+            provider_details = provider_info["provider_details"][selected_provider]
+            st.info(f"{status_emoji} {provider_details['quality']} Quality")
+    
+    # Provider comparison (expandable)
+    with st.expander("📊 Provider Comparison", expanded=False):
+        comparison_data = []
+        for provider_id, details in provider_info["provider_details"].items():
+            if details["available"]:
+                comparison_data.append({
+                    "Provider": details["name"],
+                    "Quality": details["quality"],
+                    "Speed": details["speed"],
+                    "Cost": details["cost"],
+                    "Status": "✅ Available" if details["available"] else "❌ Not Available"
+                })
+        
+        if comparison_data:
+            import pandas as pd
+            df = pd.DataFrame(comparison_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+
+    # Generate button
+    if st.button("🎨 Generate Artwork", type="primary", use_container_width=True) and prompt:
+        with st.spinner("🎨 Creating your masterpiece..."):
+            # Create generation info
+            generation_config = {
+                "prompt": prompt,
+                "enhanced_prompt": enhanced_prompt,
+                "provider": selected_provider,
+                "settings": {
+                    "art_style": art_style,
+                    "medium": medium,
+                    "art_movement": art_movement,
+                    "artist_inspiration": artist_inspiration,
+                    "shot_type": shot_type,
+                    "lighting": lighting_setup,
+                    "mood": mood_atmosphere,
+                    "color_palette": color_palette,
+                    "resolution": resolution,
+                    "quality": quality,
+                    "steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed if seed > 0 else None
+                },
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Show provider being used
+            actual_provider = selected_provider if selected_provider != "auto" else available_providers[0]
+            provider_name = provider_info["provider_details"][actual_provider]["name"]
+            st.info(f"🎨 Using {provider_name} for image generation...")
+            
+            # Generate images
+            generated_images = []
+            
+            for i in range(num_images):
+                status_text.text(f"Generating image {i+1} of {num_images} with {provider_name}...")
+                progress_bar.progress((i + 0.5) / num_images)
+                
+                # Generate image with selected provider
+                current_seed = seed + i if seed > 0 else None
+                image_data = ai_client.generate_image(
+                    enhanced_prompt, 
+                    provider=selected_provider,
+                    size=resolution
                 )
-
-                # Save generation info
-                info_json = json.dumps(generation_info, indent=2)
-                FileHandler.create_download_link(
-                    info_json.encode(),
-                    f"generation_info_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    "application/json"
-                )
+                
+                if image_data:
+                    generated_images.append({
+                        "data": image_data,
+                        "seed": current_seed,
+                        "index": i + 1,
+                        "provider": actual_provider
+                    })
+                
+                progress_bar.progress((i + 1) / num_images)
+            
+            status_text.empty()
+            progress_bar.empty()
+            
+            if generated_images:
+                st.success(f"✨ Successfully generated {len(generated_images)} image(s)!")
+                
+                # Display images
+                st.subheader("🖼️ Generated Artwork")
+                
+                if len(generated_images) == 1:
+                    # Single image display
+                    img = generated_images[0]
+                    st.image(io.BytesIO(img["data"]), caption=f"Generated Image", use_container_width=True)
+                else:
+                    # Multiple images grid
+                    cols = st.columns(min(len(generated_images), 2))
+                    for idx, img in enumerate(generated_images):
+                        with cols[idx % 2]:
+                            st.image(io.BytesIO(img["data"]), caption=f"Variation {img['index']}", use_container_width=True)
+                
+                # Image analysis and metadata
+                st.subheader("📊 Generation Details")
+                
+                detail_tabs = st.tabs(["Settings", "Prompt Analysis", "Technical Info", "Export"])
+                
+                with detail_tabs[0]:
+                    # Settings overview
+                    settings_col1, settings_col2 = st.columns(2)
+                    
+                    with settings_col1:
+                        st.write("**Artistic Settings:**")
+                        st.write(f"• Style: {art_style}")
+                        st.write(f"• Medium: {medium}")
+                        st.write(f"• Movement: {art_movement}")
+                        st.write(f"• Inspiration: {artist_inspiration}")
+                        st.write(f"• Mood: {mood_atmosphere}")
+                        
+                    with settings_col2:
+                        st.write("**Technical Settings:**")
+                        st.write(f"• Resolution: {resolution}")
+                        st.write(f"• Quality: {quality}")
+                        st.write(f"• Steps: {steps}")
+                        st.write(f"• Guidance: {guidance_scale}")
+                        st.write(f"• Seed: {seed if seed > 0 else 'Random'}")
+                
+                with detail_tabs[1]:
+                    # Prompt analysis
+                    st.write("**Enhanced Prompt:**")
+                    st.code(enhanced_prompt, language=None)
+                    
+                    analysis = analyze_prompt_quality(enhanced_prompt)
+                    
+                    analysis_cols = st.columns(4)
+                    with analysis_cols[0]:
+                        st.metric("Word Count", analysis["word_count"])
+                    with analysis_cols[1]:
+                        st.metric("Style Terms", analysis["style_terms"])
+                    with analysis_cols[2]:
+                        st.metric("Quality Score", f"{analysis['quality_score']}/10")
+                    with analysis_cols[3]:
+                        st.metric("Complexity", analysis["complexity"])
+                
+                with detail_tabs[2]:
+                    # Technical information
+                    st.write("**Generation Configuration:**")
+                    st.json(generation_config)
+                
+                with detail_tabs[3]:
+                    # Export options
+                    st.write("**Download Options:**")
+                    
+                    export_col1, export_col2 = st.columns(2)
+                    
+                    with export_col1:
+                        # Individual image downloads
+                        for i, img in enumerate(generated_images):
+                            filename = f"ai_artwork_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{i+1}.png"
+                            FileHandler.create_download_link(
+                                img["data"],
+                                filename,
+                                "image/png"
+                            )
+                    
+                    with export_col2:
+                        # Batch download and settings
+                        if len(generated_images) > 1:
+                            # Create ZIP with all images
+                            zip_data = create_image_zip(generated_images, generation_config)
+                            FileHandler.create_download_link(
+                                zip_data,
+                                f"ai_artwork_batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                                "application/zip"
+                            )
+                        
+                        # Export settings
+                        settings_json = json.dumps(generation_config, indent=2)
+                        FileHandler.create_download_link(
+                            settings_json.encode(),
+                            f"generation_settings_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                            "application/json"
+                        )
+                
+                # Quick actions
+                st.subheader("🔄 Quick Actions")
+                
+                action_col1, action_col2, action_col3, action_col4 = st.columns(4)
+                
+                with action_col1:
+                    if st.button("🎲 Regenerate"):
+                        st.rerun()
+                
+                with action_col2:
+                    if st.button("🔄 Similar Style"):
+                        # Keep settings, regenerate with slight variations
+                        st.session_state["regenerate_similar"] = True
+                        st.rerun()
+                
+                with action_col3:
+                    if st.button("✨ Enhance Quality"):
+                        # Boost quality settings and regenerate
+                        st.session_state["boost_quality"] = True
+                        st.rerun()
+                
+                with action_col4:
+                    if st.button("🎨 Style Variations"):
+                        # Generate variations with different styles
+                        st.session_state["style_variations"] = True
+                        st.rerun()
+                
             else:
-                st.error("Failed to generate image. Please try again with a different prompt.")
+                st.error("❌ Failed to generate images. Please check your settings and try again.")
+                
+                # Troubleshooting tips
+                with st.expander("🔧 Troubleshooting Tips"):
+                    st.markdown("""
+                    **Common Issues:**
+                    - **API Key**: Ensure your OpenAI API key is properly configured
+                    - **Prompt**: Try simplifying your prompt if it's too complex
+                    - **Resolution**: Lower resolution might work better for complex prompts
+                    - **Guidance Scale**: Try values between 7-15 for best results
+                    - **Content Policy**: Ensure your prompt doesn't violate content policies
+                    """)
+
+    # Quick presets
+    with st.expander("🎨 Quick Style Presets", expanded=False):
+        preset_cols = st.columns(4)
+        
+        presets = {
+            "Photorealistic Portrait": {
+                "art_style": "Photorealistic",
+                "shot_type": "Close-up",
+                "lighting_setup": "Studio Lighting",
+                "quality": "Ultra High Quality"
+            },
+            "Fantasy Landscape": {
+                "art_style": "Digital Art",
+                "shot_type": "Wide Shot",
+                "mood_atmosphere": "Majestic",
+                "color_palette": "Vibrant"
+            },
+            "Vintage Film": {
+                "art_style": "Photorealistic",
+                "post_processing": "Vintage",
+                "color_temperature": "Warm",
+                "contrast_level": "Low Contrast"
+            },
+            "Anime Character": {
+                "art_style": "Anime/Manga",
+                "shot_type": "Medium Shot",
+                "color_palette": "Vibrant",
+                "detail_level": "Highly Detailed"
+            }
+        }
+        
+        for i, (preset_name, preset_settings) in enumerate(presets.items()):
+            with preset_cols[i]:
+                if st.button(preset_name, use_container_width=True):
+                    st.session_state.update(preset_settings)
+                    st.rerun()
 
 
 def sentiment_analysis():
@@ -7487,3 +8144,516 @@ def perform_color_style_search(images, color_pref, style_pref, color_param):
 def display_visual_search_results(results):
     """Display visual search results"""
     st.info("Visual search results would be displayed here with matching images and scores.")
+
+
+# ================================
+# AI ART GENERATION HELPER FUNCTIONS
+# ================================
+
+def create_enhanced_prompt(prompt, art_style, medium, art_movement, artist_inspiration, texture, finish,
+                          shot_type, camera_angle, depth_of_field, lens_type, framing, perspective,
+                          lighting_setup, time_of_day, weather, mood_atmosphere, color_temperature, contrast_level,
+                          color_palette, dominant_color, color_harmony, saturation,
+                          quality, detail_level, render_engine, post_processing,
+                          custom_modifiers, auto_enhance, add_quality_tags, add_style_consistency,
+                          boost_details, add_photography_terms, artistic_flair):
+    """Create a comprehensive enhanced prompt for AI image generation"""
+    
+    # Start with the base prompt
+    enhanced_parts = [prompt.strip()]
+    
+    # Art Style and Medium
+    style_parts = []
+    if art_style and art_style != "Photorealistic":
+        style_parts.append(f"{art_style.lower()} style")
+    
+    if medium and medium != "None":
+        if medium in ["Canvas", "Paper", "Wood Panel"]:
+            style_parts.append(f"painted on {medium.lower()}")
+        else:
+            style_parts.append(f"{medium.lower()} medium")
+    
+    if art_movement and art_movement != "Contemporary":
+        style_parts.append(f"{art_movement.lower()} art movement")
+    
+    if artist_inspiration and artist_inspiration != "None":
+        if "Studio" in artist_inspiration or "Comics" in artist_inspiration:
+            style_parts.append(f"in the style of {artist_inspiration}")
+        else:
+            style_parts.append(f"inspired by {artist_inspiration}")
+    
+    # Surface and Texture
+    texture_parts = []
+    if texture and texture != "Smooth":
+        texture_parts.append(f"{texture.lower()} texture")
+    
+    if finish and finish != "Standard":
+        texture_parts.append(f"{finish.lower()} finish")
+    
+    # Photography and Composition
+    photo_parts = []
+    if add_photography_terms:
+        if shot_type and shot_type != "Medium Shot":
+            photo_parts.append(shot_type.lower())
+        
+        if camera_angle and camera_angle != "Eye Level":
+            photo_parts.append(f"{camera_angle.lower()} angle")
+        
+        if depth_of_field and depth_of_field != "Sharp Focus":
+            if depth_of_field == "Shallow DOF":
+                photo_parts.append("shallow depth of field")
+            elif depth_of_field == "Deep DOF":
+                photo_parts.append("deep depth of field")
+            else:
+                photo_parts.append(depth_of_field.lower())
+        
+        if lens_type and lens_type != "Standard":
+            photo_parts.append(f"{lens_type.lower()} lens")
+    
+    # Composition
+    composition_parts = []
+    if framing and framing != "Centered":
+        if framing == "Rule of Thirds":
+            composition_parts.append("rule of thirds composition")
+        elif framing == "Golden Ratio":
+            composition_parts.append("golden ratio composition")
+        else:
+            composition_parts.append(f"{framing.lower()} framing")
+    
+    if perspective and perspective != "Linear":
+        composition_parts.append(f"{perspective.lower()} perspective")
+    
+    # Lighting and Atmosphere
+    lighting_parts = []
+    if lighting_setup and lighting_setup != "Natural Light":
+        if lighting_setup == "Studio Lighting":
+            lighting_parts.append("professional studio lighting")
+        elif lighting_setup == "Dramatic Lighting":
+            lighting_parts.append("dramatic cinematic lighting")
+        elif lighting_setup == "Volumetric Lighting":
+            lighting_parts.append("volumetric lighting with god rays")
+        else:
+            lighting_parts.append(f"{lighting_setup.lower()}")
+    
+    if time_of_day and time_of_day != "Midday":
+        if time_of_day == "Golden Hour":
+            lighting_parts.append("golden hour lighting")
+        elif time_of_day == "Blue Hour":
+            lighting_parts.append("blue hour atmosphere")
+        else:
+            lighting_parts.append(f"{time_of_day.lower()} lighting")
+    
+    # Weather and Mood
+    atmosphere_parts = []
+    if weather and weather != "Clear":
+        if weather in ["Foggy", "Misty"]:
+            atmosphere_parts.append(f"{weather.lower()} atmospheric conditions")
+        else:
+            atmosphere_parts.append(f"{weather.lower()} weather")
+    
+    if mood_atmosphere and mood_atmosphere != "Serene":
+        atmosphere_parts.append(f"{mood_atmosphere.lower()} mood")
+    
+    # Color and Temperature
+    color_parts = []
+    if color_temperature and color_temperature != "Neutral":
+        if color_temperature == "Very Warm":
+            color_parts.append("very warm color temperature")
+        elif color_temperature == "Very Cool":
+            color_parts.append("very cool color temperature")
+        else:
+            color_parts.append(f"{color_temperature.lower()} color temperature")
+    
+    if contrast_level and contrast_level != "Normal":
+        if contrast_level == "High Contrast":
+            color_parts.append("high contrast lighting")
+        elif contrast_level == "Chiaroscuro":
+            color_parts.append("chiaroscuro lighting technique")
+        else:
+            color_parts.append(f"{contrast_level.lower()}")
+    
+    # Color Palette
+    palette_parts = []
+    if color_palette and color_palette != "Natural":
+        if color_palette == "Monochromatic":
+            palette_parts.append("monochromatic color scheme")
+        elif color_palette == "Complementary":
+            palette_parts.append("complementary color palette")
+        elif color_palette == "High Saturation":
+            palette_parts.append("highly saturated colors")
+        else:
+            palette_parts.append(f"{color_palette.lower().replace(' ', ' ')} colors")
+    
+    if dominant_color and dominant_color != "Auto":
+        palette_parts.append(f"dominant {dominant_color.lower()} tones")
+    
+    if saturation and saturation != "Natural":
+        if saturation not in color_palette:  # Avoid duplication
+            palette_parts.append(f"{saturation.lower().replace(' ', ' ')}")
+    
+    # Technical Quality
+    quality_parts = []
+    if add_quality_tags:
+        if quality == "Ultra High Quality":
+            quality_parts.extend(["ultra high quality", "masterpiece", "best quality"])
+        elif quality == "High Quality":
+            quality_parts.extend(["high quality", "detailed"])
+        elif quality in ["8K", "4K"]:
+            quality_parts.extend([f"{quality} resolution", "ultra detailed"])
+        elif quality == "Professional":
+            quality_parts.extend(["professional quality", "award-winning"])
+        elif quality == "Gallery Quality":
+            quality_parts.extend(["museum quality", "gallery exhibition"])
+    
+    if detail_level and detail_level != "Normal":
+        if detail_level == "Extremely Detailed":
+            quality_parts.append("extremely detailed")
+        elif detail_level == "Highly Detailed":
+            quality_parts.append("highly detailed")
+        elif detail_level == "Intricate":
+            quality_parts.append("intricate details")
+        else:
+            quality_parts.append(f"{detail_level.lower().replace(' ', ' ')}")
+    
+    # Render Engine
+    render_parts = []
+    if render_engine and render_engine != "Default":
+        if render_engine == "Unreal Engine":
+            render_parts.append("rendered in Unreal Engine")
+        elif render_engine == "Octane Render":
+            render_parts.append("octane render")
+        elif render_engine in ["Blender", "Maya", "3ds Max", "Cinema 4D"]:
+            render_parts.append(f"rendered in {render_engine}")
+        elif render_engine == "Photorealistic":
+            render_parts.append("photorealistic rendering")
+        else:
+            render_parts.append(f"{render_engine.lower()} rendering")
+    
+    # Post-Processing
+    post_parts = []
+    if post_processing and post_processing != "None":
+        if post_processing == "Color Grading":
+            post_parts.append("professional color grading")
+        elif post_processing == "Film Grain":
+            post_parts.append("subtle film grain")
+        elif post_processing == "HDR":
+            post_parts.append("HDR processing")
+        elif post_processing == "Film Look":
+            post_parts.append("cinematic film look")
+        else:
+            post_parts.append(f"{post_processing.lower().replace(' ', ' ')}")
+    
+    # Enhanced Details
+    detail_enhancement = []
+    if boost_details:
+        detail_enhancement.extend([
+            "fine details", "sharp focus", "crisp image", "clear definition"
+        ])
+    
+    # Artistic Flair
+    artistic_enhancement = []
+    if artistic_flair:
+        artistic_enhancement.extend([
+            "trending on artstation", "award-winning", "breathtaking",
+            "stunning visual", "masterful composition"
+        ])
+    
+    # Style Consistency
+    consistency_parts = []
+    if add_style_consistency and art_style != "Photorealistic":
+        consistency_parts.append(f"consistent {art_style.lower()} aesthetic throughout")
+    
+    # Compile all parts
+    all_parts = [
+        enhanced_parts,
+        style_parts,
+        texture_parts,
+        photo_parts,
+        composition_parts,
+        lighting_parts,
+        atmosphere_parts,
+        color_parts,
+        palette_parts,
+        quality_parts,
+        render_parts,
+        post_parts,
+        detail_enhancement,
+        artistic_enhancement,
+        consistency_parts
+    ]
+    
+    # Filter and join
+    filtered_parts = []
+    for part_group in all_parts:
+        if part_group:
+            if isinstance(part_group, list):
+                filtered_parts.extend([p for p in part_group if p])
+            else:
+                filtered_parts.append(part_group)
+    
+    # Add custom modifiers
+    if custom_modifiers:
+        filtered_parts.append(custom_modifiers.strip())
+    
+    # Create final prompt
+    enhanced_prompt = ", ".join(filtered_parts)
+    
+    # Auto-enhancement
+    if auto_enhance:
+        enhanced_prompt = auto_enhance_prompt(enhanced_prompt)
+    
+    return enhanced_prompt
+
+
+def auto_enhance_prompt(prompt):
+    """Automatically enhance prompt with quality and professional terms"""
+    enhancements = []
+    
+    # Add quality terms if not present
+    quality_terms = ["high quality", "detailed", "masterpiece", "best quality", "professional"]
+    if not any(term in prompt.lower() for term in quality_terms):
+        enhancements.append("high quality, detailed")
+    
+    # Add technical terms
+    technical_terms = ["sharp focus", "8k", "4k", "ultra detailed"]
+    if not any(term in prompt.lower() for term in technical_terms):
+        enhancements.append("sharp focus")
+    
+    # Add artistic terms
+    artistic_terms = ["beautiful", "stunning", "gorgeous", "magnificent", "breathtaking"]
+    if not any(term in prompt.lower() for term in artistic_terms):
+        enhancements.append("beautiful")
+    
+    if enhancements:
+        return f"{prompt}, {', '.join(enhancements)}"
+    return prompt
+
+
+def get_prompt_template(template_name):
+    """Get predefined prompt templates for quick start"""
+    templates = {
+        "Portrait": {
+            "art_style": "Photorealistic",
+            "shot_type": "Close-up",
+            "lighting_setup": "Studio Lighting",
+            "depth_of_field": "Shallow DOF",
+            "quality": "Ultra High Quality",
+            "detail_level": "Highly Detailed"
+        },
+        "Landscape": {
+            "art_style": "Photorealistic",
+            "shot_type": "Wide Shot",
+            "lighting_setup": "Natural Light",
+            "time_of_day": "Golden Hour",
+            "color_palette": "Vibrant",
+            "mood_atmosphere": "Majestic"
+        },
+        "Abstract Art": {
+            "art_style": "Abstract",
+            "color_palette": "Vibrant",
+            "composition": "Asymmetrical",
+            "texture": "Smooth",
+            "artistic_flair": True
+        },
+        "Architecture": {
+            "art_style": "Photorealistic",
+            "shot_type": "Wide Shot",
+            "lighting_setup": "Natural Light",
+            "perspective": "Two Point",
+            "detail_level": "Extremely Detailed"
+        },
+        "Fantasy": {
+            "art_style": "Digital Art",
+            "mood_atmosphere": "Mystical",
+            "lighting_setup": "Dramatic Lighting",
+            "color_palette": "Vibrant",
+            "artistic_flair": True
+        },
+        "Sci-Fi": {
+            "art_style": "Digital Art",
+            "mood_atmosphere": "Futuristic",
+            "lighting_setup": "Volumetric Lighting",
+            "color_palette": "Cool Tones",
+            "render_engine": "Unreal Engine"
+        },
+        "Product Photo": {
+            "art_style": "Photorealistic",
+            "shot_type": "Close-up",
+            "lighting_setup": "Studio Lighting",
+            "background": "Clean",
+            "quality": "Professional"
+        },
+        "Character Design": {
+            "art_style": "Digital Art",
+            "shot_type": "Medium Shot",
+            "detail_level": "Highly Detailed",
+            "color_palette": "Vibrant",
+            "artistic_flair": True
+        }
+    }
+    
+    return templates.get(template_name, {})
+
+
+def calculate_prompt_complexity(prompt):
+    """Calculate the complexity score of a prompt (1-10)"""
+    if not prompt:
+        return 0
+    
+    score = 0
+    words = prompt.split()
+    
+    # Word count factor
+    word_count = len(words)
+    if word_count > 100:
+        score += 3
+    elif word_count > 50:
+        score += 2
+    elif word_count > 20:
+        score += 1
+    
+    # Technical terms
+    technical_terms = [
+        "resolution", "lighting", "composition", "perspective", "depth of field",
+        "color grading", "render", "engine", "photorealistic", "detailed"
+    ]
+    tech_count = sum(1 for term in technical_terms if term in prompt.lower())
+    score += min(tech_count, 3)
+    
+    # Artistic terms
+    artistic_terms = [
+        "style", "mood", "atmosphere", "palette", "contrast", "saturation",
+        "texture", "medium", "movement", "inspired", "masterpiece"
+    ]
+    art_count = sum(1 for term in artistic_terms if term in prompt.lower())
+    score += min(art_count, 2)
+    
+    # Specific artists or styles
+    specific_terms = [
+        "van gogh", "picasso", "monet", "dali", "renaissance", "baroque",
+        "impressionist", "surreal", "abstract", "minimalist"
+    ]
+    specific_count = sum(1 for term in specific_terms if term in prompt.lower())
+    score += min(specific_count, 2)
+    
+    return min(score, 10)
+
+
+def analyze_prompt_quality(prompt):
+    """Analyze prompt quality and provide detailed metrics"""
+    if not prompt:
+        return {
+            "word_count": 0,
+            "style_terms": 0,
+            "quality_score": 0,
+            "complexity": "Low"
+        }
+    
+    words = prompt.split()
+    word_count = len(words)
+    
+    # Count style-related terms
+    style_terms = [
+        "style", "art", "painting", "digital", "realistic", "abstract",
+        "impressionist", "surreal", "modern", "classical", "vintage"
+    ]
+    style_count = sum(1 for term in style_terms if term in prompt.lower())
+    
+    # Calculate quality score
+    quality_indicators = [
+        "high quality", "detailed", "masterpiece", "professional", "award-winning",
+        "stunning", "beautiful", "gorgeous", "breathtaking", "ultra detailed",
+        "8k", "4k", "sharp focus", "crisp", "clear"
+    ]
+    quality_count = sum(1 for indicator in quality_indicators if indicator in prompt.lower())
+    
+    # Overall score calculation
+    base_score = min(word_count // 10, 4)  # Max 4 points for word count
+    style_score = min(style_count, 3)       # Max 3 points for style terms
+    quality_score = min(quality_count, 3)   # Max 3 points for quality terms
+    
+    total_score = base_score + style_score + quality_score
+    
+    # Complexity assessment
+    complexity_score = calculate_prompt_complexity(prompt)
+    if complexity_score >= 7:
+        complexity = "High"
+    elif complexity_score >= 4:
+        complexity = "Medium"
+    else:
+        complexity = "Low"
+    
+    return {
+        "word_count": word_count,
+        "style_terms": style_count,
+        "quality_score": total_score,
+        "complexity": complexity
+    }
+
+
+def create_image_zip(generated_images, generation_config):
+    """Create a ZIP file containing all generated images and metadata"""
+    import zipfile
+    import io
+    
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Add images
+        for i, img in enumerate(generated_images):
+            filename = f"ai_artwork_{i+1:02d}.png"
+            zip_file.writestr(filename, img["data"])
+        
+        # Add generation configuration
+        config_json = json.dumps(generation_config, indent=2)
+        zip_file.writestr("generation_config.json", config_json)
+        
+        # Add prompt information
+        prompt_info = {
+            "original_prompt": generation_config.get("prompt", ""),
+            "enhanced_prompt": generation_config.get("enhanced_prompt", ""),
+            "generation_time": generation_config.get("timestamp", ""),
+            "settings_summary": generation_config.get("settings", {})
+        }
+        prompt_json = json.dumps(prompt_info, indent=2)
+        zip_file.writestr("prompt_details.json", prompt_json)
+        
+        # Add README
+        readme_content = f"""AI Art Generation Batch
+========================
+
+Generated on: {generation_config.get('timestamp', 'Unknown')}
+Number of images: {len(generated_images)}
+
+Original Prompt:
+{generation_config.get('prompt', 'Not available')}
+
+Enhanced Prompt:
+{generation_config.get('enhanced_prompt', 'Not available')}
+
+Files included:
+- ai_artwork_01.png, ai_artwork_02.png, etc. - Generated images
+- generation_config.json - Complete generation settings
+- prompt_details.json - Prompt information and summary
+- README.txt - This file
+
+Settings Used:
+{json.dumps(generation_config.get('settings', {}), indent=2)}
+"""
+        zip_file.writestr("README.txt", readme_content)
+    
+    zip_buffer.seek(0)
+    return zip_buffer.getvalue()
+
+
+def enhance_image_prompt(prompt: str, style: str, mood: str, color_scheme: str) -> str:
+    """Legacy function for compatibility - now uses the enhanced system"""
+    return create_enhanced_prompt(
+        prompt, style, "None", "Contemporary", "None", "Smooth", "Standard",
+        "Medium Shot", "Eye Level", "Sharp Focus", "Standard", "Centered", "Linear",
+        "Natural Light", "Midday", "Clear", mood, "Neutral", "Normal",
+        color_scheme, "Auto", "Natural", "Natural",
+        "High Quality", "Normal", "Default", "None",
+        "", True, True, True,
+        False, False, False
+    )
